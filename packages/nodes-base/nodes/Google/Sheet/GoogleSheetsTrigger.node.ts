@@ -473,8 +473,19 @@ export class GoogleSheetsTrigger implements INodeType {
 						} else {
 							if (this.getMode() !== 'manual') {
 								workflowStaticData.lastRevision = lastRevision;
-								workflowStaticData.lastRevisionLink =
-									revisions[revisions.length - 1].exportLinks[BINARY_MIME_TYPE];
+								// Check if exportLinks is available (not available with Service Account)
+								const lastRevisionData = revisions[revisions.length - 1];
+								if (
+									lastRevisionData.exportLinks &&
+									lastRevisionData.exportLinks[BINARY_MIME_TYPE]
+								) {
+									workflowStaticData.lastRevisionLink =
+										lastRevisionData.exportLinks[BINARY_MIME_TYPE];
+								} else {
+									// Service Account doesn't have access to exportLinks
+									// We'll use the stored data approach instead
+									workflowStaticData.lastRevisionLink = undefined;
+								}
 							}
 						}
 					}
@@ -626,6 +637,11 @@ export class GoogleSheetsTrigger implements INodeType {
 						returnData = arrayOfArraysToJson(currentData, columns);
 					}
 
+					// Store current data for next comparison (needed for Service Account)
+					if (this.getMode() !== 'manual') {
+						workflowStaticData.previousSheetData = JSON.stringify(currentData);
+					}
+
 					if (Array.isArray(returnData) && returnData.length !== 0 && this.getMode() === 'manual') {
 						return [this.helpers.returnJsonArray(returnData)];
 					} else {
@@ -633,14 +649,32 @@ export class GoogleSheetsTrigger implements INodeType {
 					}
 				}
 
-				const previousRevisionBinaryData = await getRevisionFile.call(this, previousRevisionLink);
+				let previousRevisionSheetData: string[][] = [];
 
-				const previousRevisionSheetData =
-					sheetBinaryToArrayOfArrays(
-						previousRevisionBinaryData,
-						sheetName,
-						rangeDefinition === 'specifyRangeA1' ? range : undefined,
-					) || [];
+				// Check if we need to use stored data (Service Account) or download from Drive (OAuth2)
+				if (previousRevisionLink) {
+					// OAuth2 path: download from Drive export
+					const previousRevisionBinaryData = await getRevisionFile.call(this, previousRevisionLink);
+					previousRevisionSheetData =
+						sheetBinaryToArrayOfArrays(
+							previousRevisionBinaryData,
+							sheetName,
+							rangeDefinition === 'specifyRangeA1' ? range : undefined,
+						) || [];
+				} else if (workflowStaticData.previousSheetData) {
+					// Service Account path: use stored data
+					try {
+						previousRevisionSheetData = JSON.parse(workflowStaticData.previousSheetData as string);
+					} catch (error) {
+						// If parsing fails, treat as first run
+						previousRevisionSheetData = [];
+					}
+				}
+
+				// Store current data for next comparison (needed for Service Account)
+				if (this.getMode() !== 'manual' && !previousRevisionLink) {
+					workflowStaticData.previousSheetData = JSON.stringify(currentData);
+				}
 
 				const includeInOutput = this.getNodeParameter('includeInOutput', 'new') as string;
 
