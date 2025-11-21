@@ -153,19 +153,30 @@ export class GoogleSheetsTrigger implements INodeType {
 					},
 				},
 			},
+			{
+				name: 'googleApi',
+				required: true,
+				displayOptions: {
+					show: {
+						authentication: ['serviceAccount'],
+					},
+				},
+			},
 		],
 		polling: true,
 		properties: [
-			// trigger shared logic with GoogleSheets node, leaving this here for compatibility
 			{
 				displayName: 'Authentication',
 				name: 'authentication',
-				type: 'hidden',
+				type: 'options',
 				options: [
 					{
-						// eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased
 						name: 'OAuth2 (recommended)',
 						value: 'triggerOAuth2',
+					},
+					{
+						name: 'Service Account',
+						value: 'serviceAccount',
 					},
 				],
 				default: 'triggerOAuth2',
